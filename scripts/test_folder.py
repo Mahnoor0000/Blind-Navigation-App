@@ -11,8 +11,8 @@ from ultralytics import YOLO
 
 # ---- settings ----
 model_path = "models/best.pt"     # your trained weights
-image_dir = "test_images"         # folder with your test photos
-out_dir = "test_results"          # where results go
+image_dir = "test_images_descending"
+out_dir = "test_results_descending"
 conf = 0.25                       # minimum confidence to show a box
 imgsz = 640                       # same size you trained with
 # ------------------

@@ -24,7 +24,8 @@ blip_vizwiz/
 
 # test photos (web images are copyrighted, own photos are personal)
 test_images/
-
+test_results_descending/
+test_images_descending/
 # stray images in the scripts folder
 scripts/*.jpg
 scripts/*.png
