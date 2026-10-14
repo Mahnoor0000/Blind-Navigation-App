@@ -1,0 +1,15 @@
+# Core
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Detection
+ultralytics>=8.3.0
+
+# Captioning
+transformers>=4.40.0
+accelerate>=0.30.0
+
+# Utilities
+Pillow>=10.0.0
+numpy>=1.26.0
+PyYAML>=6.0

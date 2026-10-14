@@ -1,0 +1,42 @@
+# ---------- Python ----------
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# ---------- Editor ----------
+.vscode/
+*.code-workspace
+
+# ---------- Data (too big for git, re-create with the scripts) ----------
+Dataset/
+datasets/
+dataset_preview/
+outdoor_dataset_yolo_bbox/
+*.zip
+*.cache
+
+# ---------- Training and test outputs ----------
+runs/
+test_results/
+blip_vizwiz/
+
+# test photos (web images are copyrighted, own photos are personal)
+test_images/
+
+# stray images in the scripts folder
+scripts/*.jpg
+scripts/*.png
+
+# ---------- Model weights ----------
+# ignore all weights (yolov8n.pt downloads itself, old runs are not needed)...
+*.pt
+*.pth
+*.onnx
+*.tflite
+# ...except the current trained model, which is small (~6 MB) and worth keeping
+!models/best.pt
+
+# ---------- Secrets ----------
+.env
