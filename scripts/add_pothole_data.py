@@ -21,7 +21,7 @@ import yaml
 from ultralytics import YOLO
 
 # ---------------- settings ----------------
-SRC_DIR = r"D:\Downloads\pothole data" # the downloaded dataset folder
+SRC_DIR = r"D:\Downloads\pothole data"      # the downloaded dataset folder
 DST_DIR = "Dataset/merged_dataset_v2"        # your merged dataset
 PREFIX = "pot_"                              # added to file names so nothing clashes
 
@@ -40,7 +40,7 @@ PREVIEW_COUNT = 25
 # COCO class id -> your class id (only classes that matter for walking)
 COCO_TO_MINE = {
     0: 0,    # person -> person
-    1: 2,    # bicycle -> cycle
+    1: 1,    # bicycle -> vehicle (cycle was merged into vehicle)
     2: 1,    # car -> vehicle
     3: 1,    # motorcycle -> vehicle
     5: 1,    # bus -> vehicle
