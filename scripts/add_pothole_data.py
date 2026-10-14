@@ -5,9 +5,9 @@
 # COCO-pretrained YOLO over every new image and adds boxes for those classes too.
 #
 # Run from the FYP1 folder:
-#   1. python scripts/add_single_class_dataset.py          (DRY RUN: counts + preview images only)
+#   1. python scripts/add_single_class_dataset.py         
 #   2. look at the images in Dataset/preview_added/
-#   3. set APPLY = True and run again                       (actually copies into the dataset)
+#   3. set APPLY = True and run again                       
 #
 # Safe to run twice: images that are already there are skipped.
 
