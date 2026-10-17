@@ -7,8 +7,8 @@ src_dir = "Dataset/merged_dataset_v2"
 out_dir = "Dataset/merged_subset"
 
 # how many images in each split
-targets = {"train": 8000, "valid": 600, "test": 300}
-per_class = {"train": 400, "valid": 30, "test": 15}
+targets = {"train": 10000, "valid": 600, "test": 300}
+per_class = {"train": 800, "valid": 30, "test": 15}
 
 # the 91 phone photos of stairs from the first stairs dataset, always keep them in train
 always_keep_prefix = "stairs_"

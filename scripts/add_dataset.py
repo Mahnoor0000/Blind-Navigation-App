@@ -36,7 +36,7 @@ PREFIX = "stairs3_"                       # added to file names so nothing clash
 # Your ids: stairs = 5, pothole = 20
 SRC_KEEP = {0: 5}                         # stairs
 
-APPLY = False             # False = dry run, True = copy into the dataset
+APPLY = True             # False = dry run, True = copy into the dataset
 SKIP_UNLABELLED = True    # never add images that have no label file
 AUTO_LABEL = True         # add person/vehicle/etc boxes with a COCO model
 COCO_MODEL = "yolov8m.pt" # downloads automatically; use yolov8s.pt if too slow
