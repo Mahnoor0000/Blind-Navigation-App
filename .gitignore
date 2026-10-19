@@ -26,6 +26,7 @@ blip_vizwiz/
 test_images/
 test_results_descending/
 test_images_descending/
+TEST IMAGES FOR BLIP/*
 # stray images in the scripts folder
 scripts/*.jpg
 scripts/*.png
