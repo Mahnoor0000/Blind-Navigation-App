@@ -25,7 +25,7 @@ from pycocoevalcap.cider.cider import Cider
 # ---------------- settings ----------------
 IMAGE_DIR = "TEST IMAGES FOR BLIP"
 REF_CSV = os.path.join(IMAGE_DIR, "references.csv")
-BLIP_MODEL = "Salesforce/blip-image-captioning-base"
+BLIP_MODEL = "models/blip_vizwiz"
 OUT_DIR = "test_results"
 
 # each setting: name, text prompt (or None), and generate() options
@@ -97,12 +97,12 @@ for name, prompt, opts in SETTINGS:
     captions[name] = caps
 
 os.makedirs(OUT_DIR, exist_ok=True)
-with open(os.path.join(OUT_DIR, "sweep_captions.csv"), "w", newline="", encoding="utf-8-sig") as f:
+with open(os.path.join(OUT_DIR, "sweep_captions_vizwiz.csv"), "w", newline="", encoding="utf-8-sig") as f:
     w = csv.writer(f)
     w.writerow(["no", "scene", "reference"] + [s[0] for s in SETTINGS])
     for i, r in enumerate(items):
         w.writerow([r["no"], r["scene"], refs[i][0] if refs[i] else ""] + [captions[s[0]][i] for s in SETTINGS])
-with open(os.path.join(OUT_DIR, "sweep_summary.txt"), "w") as f:
+with open(os.path.join(OUT_DIR, "sweep_summary_vizwiz.txt"), "w") as f:
     f.write("\n".join(summary) + "\n")
 
 print("\n---- summary ----")
