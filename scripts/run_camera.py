@@ -11,7 +11,7 @@ from caption import Captioner
 
 # ---------- settings ----------
 model_path = "models/best.pt"
-camera_index = 0          # 0 = laptop webcam, try 1 for an external camera
+camera_index = "http://10.25.32.180:4747/video"         
 image_size = 480          # lower = faster video (416 is faster still), 640 = best accuracy
 min_conf = MIN_CONF       # lowest per-class threshold; fusion_engine applies the real per-class ones
 use_captions = True       # BLIP scene descriptions, press c to turn them on / off
@@ -93,13 +93,53 @@ def caption_worker(frame, labels):
     caption_state["busy"] = False
 
 
-# ---------- start ----------
-cap = cv2.VideoCapture(camera_index)
-if not cap.isOpened():
-    print("could not open the camera, try camera_index = 1")
-    raise SystemExit
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# ---------- camera ----------
+# reads frames in its own thread and always keeps only the newest one.
+# works for a webcam number (0, 1) and for a phone stream URL (DroidCam, IP Webcam).
+# if the stream drops, it reconnects instead of stopping the program.
+class Camera:
+    def __init__(self, source):
+        self.source = source
+        self.frame = None
+        self.lock = threading.Lock()
+        self.cap = None
+        threading.Thread(target=self._reader, daemon=True).start()
+
+    def _open(self):
+        cap = cv2.VideoCapture(self.source)
+        if isinstance(self.source, int):
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
+    def _reader(self):
+        while running:
+            if self.cap is None or not self.cap.isOpened():
+                self.cap = self._open()
+                if not self.cap.isOpened():
+                    print("camera not reachable, retrying in 2 s...")
+                    time.sleep(2)
+                    continue
+                print("camera connected")
+            ok, frame = self.cap.read()
+            if not ok:
+                print("camera stream dropped, reconnecting...")
+                self.cap.release()
+                self.cap = None
+                time.sleep(1)
+                continue
+            with self.lock:
+                self.frame = frame
+
+    def read(self):
+        with self.lock:
+            return None if self.frame is None else self.frame.copy()
+
+    def release(self):
+        if self.cap is not None:
+            self.cap.release()
+
 
 print("loading YOLO...")
 model = YOLO(model_path)
@@ -115,13 +155,17 @@ pending_caption = ""
 pending_caption_time = 0.0
 fps = 0.0
 last_time = time.time()
+# open the camera only now, after the slow model loading, so a phone stream does not time out
+cam = Camera(camera_index)
 print("running. press q to quit, m to mute the voice, c to turn captions on / off")
 
 while True:
-    ok, frame = cap.read()
-    if not ok:
-        print("lost the camera")
-        break
+    frame = cam.read()
+    if frame is None:
+        # no picture yet (still connecting); keep the window responsive
+        if cv2.waitKey(50) & 0xFF == ord("q"):
+            break
+        continue
 
     results = model(frame, imgsz=image_size, conf=min_conf, verbose=False)[0]
     height, width = frame.shape[:2]
@@ -195,6 +239,6 @@ while True:
         print("captions on" if use_captions else "captions off")
 
 running = False
-cap.release()
+cam.release()
 cv2.destroyAllWindows()
 voice.terminate()
