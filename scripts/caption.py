@@ -6,17 +6,19 @@ import torch
 from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
-model_name = "Salesforce/blip-image-captioning-base"   # later: path to the fine-tuned "best" folder
+# fine-tuned on VizWiz; best on the 31 own photos with setting A (CIDEr 1.019)
+model_name = "models/blip_vizwiz"
 
-# setting F from the sweep: fewest invented objects, good CIDEr, faster than 3-beam without prompt
-PROMPT = "a view of"
-GEN_OPTIONS = dict(num_beams=3, min_new_tokens=6, max_new_tokens=30,
-                   repetition_penalty=1.3, no_repeat_ngram_size=3)
+# setting A: no prompt, 3 beams
+PROMPT = None          
+GEN_OPTIONS = dict(num_beams=3, max_new_tokens=30, repetition_penalty=1.3)
 
 
 class Captioner:
-    def __init__(self, name=model_name):
+    def __init__(self, name=model_name, prompt=PROMPT, options=None):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.prompt = prompt
+        self.options = options or GEN_OPTIONS
         self.processor = BlipProcessor.from_pretrained(name)
         self.model = BlipForConditionalGeneration.from_pretrained(name).to(self.device)
         self.model.eval()
@@ -25,25 +27,31 @@ class Captioner:
         # frame_bgr is a normal opencv image (camera frame or cv2.imread)
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(rgb)
-        inputs = self.processor(images=image, text=PROMPT, return_tensors="pt").to(self.device)
+        if self.prompt:
+            inputs = self.processor(images=image, text=self.prompt, return_tensors="pt")
+        else:
+            inputs = self.processor(images=image, return_tensors="pt")
+        inputs = inputs.to(self.device)
         with torch.no_grad():
-            out = self.model.generate(**inputs, **GEN_OPTIONS)
+            out = self.model.generate(**inputs, **self.options)
         text = self.processor.decode(out[0], skip_special_tokens=True).strip()
-        # the prompt is part of the output: "a view of a lecture room ..." -> "a lecture room ..."
-        if text.lower().startswith(PROMPT):
-            text = text[len(PROMPT):].strip()
-        return text
+        # with a prompt, the prompt is part of the output: "a view of a room ..." -> "a room ..."
+        if self.prompt and text.lower().startswith(self.prompt.lower()):
+            text = text[len(self.prompt):].strip()
+        return text.rstrip(".")
 
 
-# running this file directly captions every image in test_images (your old test)
+# running this file directly captions every image in the caption test folder
 if __name__ == "__main__":
     image_folder = "TEST IMAGES FOR BLIP"
     captioner = Captioner()
 
-    for fname in os.listdir(image_folder):
+    for fname in sorted(os.listdir(image_folder)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
         image = cv2.imread(os.path.join(image_folder, fname))
+        if image is None:
+            continue
         start = time.time()
         text = captioner.caption(image)
         elapsed = time.time() - start
