@@ -6,14 +6,14 @@ import subprocess
 import cv2
 from ultralytics import YOLO
 
-from fusion_engine import FusionEngine
+from fusion_engine import FusionEngine, keep_detections, MIN_CONF
 from caption import Captioner
 
 # ---------- settings ----------
 model_path = "models/best.pt"
 camera_index = 0          # 0 = laptop webcam, try 1 for an external camera
 image_size = 480          # lower = faster video (416 is faster still), 640 = best accuracy
-min_conf = 0.45           # ignore detections the model is not sure about
+min_conf = MIN_CONF       # lowest per-class threshold; fusion_engine applies the real per-class ones
 use_captions = True       # BLIP scene descriptions, press c to turn them on / off
 
 
@@ -27,28 +27,48 @@ speech_script = (
     "while (($line = [Console]::In.ReadLine()) -ne $null) { "
     "$s.Speak($line); [Console]::Out.WriteLine('done'); [Console]::Out.Flush() }"
 )
-voice = subprocess.Popen(
-    ["powershell", "-NoProfile", "-NonInteractive", "-Command", speech_script],
-    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
-)
+
+
+def start_voice():
+    return subprocess.Popen(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", speech_script],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
+    )
+
+
+voice = start_voice()
+running = True
 
 # speech runs in its own thread so the video does not freeze while talking
 speech_queue = queue.Queue(maxsize=1)
+voice_busy = threading.Event()     # set while a sentence is being spoken
 
 
 def speaker_loop():
-    while True:
+    global voice
+    while running:
         text = speech_queue.get()
+        voice_busy.set()
         try:
             voice.stdin.write(text.replace("\n", " ") + "\n")
             voice.stdin.flush()
             voice.stdout.readline()    # waits until the sentence is finished
         except Exception as error:
-            print("voice error:", error)
+            if running:
+                # the PowerShell voice died: start a new one and carry on
+                print("voice error, restarting the voice:", error)
+                try:
+                    voice.kill()
+                except Exception:
+                    pass
+                voice = start_voice()
+        voice_busy.clear()
 
 
 def say(text):
     # returns True if the text was accepted, False if the voice is still busy
+    if voice_busy.is_set():
+        return False
     try:
         speech_queue.put_nowait(text)
         return True
@@ -58,15 +78,16 @@ def say(text):
 
 # ---------- captions ----------
 # BLIP takes a few seconds, so it runs in a background thread
-caption_state = {"busy": False, "text": "", "time": 0.0}
+caption_state = {"busy": False, "text": "", "time": 0.0, "labels": set()}
 
 
-def caption_worker(frame):
+def caption_worker(frame, labels):
     try:
         text = captioner.caption(frame)
     except Exception as error:
         print("caption error:", error)
         text = ""
+    caption_state["labels"] = labels   # what YOLO saw in the same frame, to check the caption
     caption_state["text"] = text
     caption_state["time"] = time.time()
     caption_state["busy"] = False
@@ -90,6 +111,8 @@ threading.Thread(target=speaker_loop, daemon=True).start()
 
 muted = False
 shown_caption = ""
+pending_caption = ""
+pending_caption_time = 0.0
 fps = 0.0
 last_time = time.time()
 print("running. press q to quit, m to mute the voice, c to turn captions on / off")
@@ -109,6 +132,7 @@ while True:
         x1, y1, x2, y2 = box.xyxy[0].tolist()
         detections.append({
             "label": model.names[int(box.cls[0])],
+            "conf": float(box.conf[0]),
             "area": ((x2 - x1) * (y2 - y1)) / (width * height),
             "x_center": (x1 + x2) / 2 / width,
         })
@@ -124,20 +148,27 @@ while True:
     if use_captions and not caption_state["busy"] and engine.caption_due():
         engine.caption_started()
         caption_state["busy"] = True
-        threading.Thread(target=caption_worker, args=(frame.copy(),), daemon=True).start()
+        frame_labels = {d["label"] for d in keep_detections(detections)}
+        threading.Thread(target=caption_worker, args=(frame.copy(), frame_labels), daemon=True).start()
 
     # 3. speak a finished caption, but only if nothing urgent was said this frame
+    #    (captions are checked against YOLO: a caption naming a hazard YOLO did not see is dropped)
     if caption_state["text"] != "":
-        text = caption_state["text"]
-        age = time.time() - caption_state["time"]
+        text = engine.clean_caption(caption_state["text"], caption_state["labels"])
         caption_state["text"] = ""
-        if age < 6:
-            text = engine.clean_caption(text)
-            if text != "":
-                shown_caption = text
-                print("caption:", text)
-                if len(phrases) == 0 and not muted:
-                    say(text)
+        if text != "":
+            shown_caption = text
+            print("caption:", text)
+            pending_caption = text              # keep it until the voice is free
+            pending_caption_time = caption_state["time"]
+
+    # a caption waits while hazards are being spoken, and is thrown away if it gets old
+    if pending_caption != "":
+        if time.time() - pending_caption_time > 8:
+            pending_caption = ""                # the scene has probably changed
+        elif len(phrases) == 0 and not muted and say(pending_caption):
+            print("saying caption:", pending_caption)
+            pending_caption = ""
 
     # frames per second, so you can see how slow it really is
     now = time.time()
@@ -163,6 +194,7 @@ while True:
         use_captions = not use_captions
         print("captions on" if use_captions else "captions off")
 
+running = False
 cap.release()
 cv2.destroyAllWindows()
 voice.terminate()
