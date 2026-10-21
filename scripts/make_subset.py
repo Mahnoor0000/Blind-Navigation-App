@@ -3,7 +3,7 @@ import random
 import shutil
 import yaml
 
-src_dir = "Dataset/merged_dataset_v2"
+src_dir = "Dataset/merged_dataset_v3"
 out_dir = "Dataset/merged_subset"
 
 # how many images in each split

@@ -3,7 +3,7 @@ import yaml
 from collections import Counter
 
 # point this at your merged dataset (the one with images/labels folders)
-dataset_dir = "Dataset/merged_dataset_v2"
+dataset_dir = "Dataset/merged_dataset_v3"
 
 # read class names from data.yaml so the list is always complete
 with open(os.path.join(dataset_dir, "data.yaml")) as f:
