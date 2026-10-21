@@ -25,8 +25,8 @@ from pycocoevalcap.cider.cider import Cider
 # ---------------- settings ----------------
 IMAGE_DIR = "TEST IMAGES FOR BLIP"
 REF_CSV = os.path.join(IMAGE_DIR, "references.csv")
-BLIP_MODEL = "models/blip_vizwiz"
-OUT_DIR = "test_results"
+BLIP_MODEL = "models/blip_qwen_drop"
+OUT_DIR = "test_results/sweep_qwen_drop"
 
 # each setting: name, text prompt (or None), and generate() options
 SETTINGS = [
