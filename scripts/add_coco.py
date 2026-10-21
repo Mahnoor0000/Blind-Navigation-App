@@ -33,7 +33,7 @@ STAGE = "Dataset/coco_stage"
 OWN_MODEL = "models/best.pt"   # your run4 model (29-class names are mapped to v3 below)
 OWN_CONF = 0.5
 PREFIX = "coco_"
-APPLY = False
+APPLY = True
 SEED = 0
 
 # how many images to take per COCO class (an image can count for several), then fill up to N_TOTAL
