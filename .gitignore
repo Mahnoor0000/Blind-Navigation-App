@@ -33,7 +33,7 @@ scripts/*.png
 
 # ---------- Model weights ----------
 # ignore all weights (yolov8n.pt downloads itself, old runs are not needed)...
-*.pt
+/weights/
 *.pth
 *.onnx
 *.tflite
