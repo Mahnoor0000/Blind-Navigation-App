@@ -1,8 +1,9 @@
 # Builds merged_dataset_v3 from merged_dataset_v2 with fewer, cleaner classes:
 #   red / green / yellow_light -> traffic_light   (colours were confused; app says "traffic light" anyway)
 #   parking_meter              -> pole
-#   branch, potted_plant       -> obstacle
-#   cycle (0 boxes), bushes    -> removed
+#   cycle (0), bushes, tree, branch, potted_plant -> removed
+#     (v3 first merged branch + potted_plant into obstacle: obstacle fell from 0.86 to 0.27 mAP50,
+#      so obstacle is kept clean now; tree was 0.31 mAP50 and the app ignores it)
 #   animal                     -> new, empty for now (COCO cows / horses / sheep get added later)
 #
 # merged_dataset_v2 is NOT changed. Images are hard-linked (no extra disk space) or copied.
@@ -24,7 +25,7 @@ APPLY = True
 
 # new class list, in id order (0, 1, 2, ...)
 NEW_NAMES = [
-    "person", "vehicle", "pole", "tree", "stairs", "door", "chair", "table", "shelf", "bin",
+    "person", "vehicle", "pole", "stairs", "door", "chair", "table", "shelf", "bin",
     "fire_extinguisher", "obstacle", "traffic_light", "stop_sign", "fire_hydrant", "bench",
     "dog", "pothole", "crosswalk", "traffic_cone", "elevator", "animal",
 ]
@@ -33,12 +34,13 @@ NEW_NAMES = [
 CHANGE = {
     "cycle": None,
     "bushes": None,
+    "tree": None,          # to keep trees: delete this line and put "tree" back in NEW_NAMES
     "red_light": "traffic_light",
     "green_light": "traffic_light",
     "yellow_light": "traffic_light",
     "parking_meter": "pole",
-    "branch": "obstacle",
-    "potted_plant": "obstacle",
+    "branch": None,
+    "potted_plant": None,
 }
 # ------------------------------------------
 

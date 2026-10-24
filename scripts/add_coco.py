@@ -1,4 +1,17 @@
-
+# Adds ~5,000 COCO images to merged_dataset_v3, using COCO's own (human) labels for the
+# classes COCO has, and YOUR model for your classes COCO doesn't label (door, pole, stairs...).
+#
+# Why your model too: a COCO photo with a door in it has no door box, so YOLO would learn
+# "door = background". Your model's confident boxes (conf >= OWN_CONF) fill that gap.
+#
+# Run from the FYP1 folder:
+#   1. python scripts/add_coco.py      downloads labels + images into Dataset/coco_stage,
+#                                      labels them, makes preview images. Nothing added yet.
+#                                      Safe to stop and rerun: finished downloads are kept.
+#   2. look at Dataset/coco_stage/preview (green = COCO label, orange = your model)
+#   3. set APPLY = True and run again  -> copies into merged_dataset_v3
+#
+# COCO is CC BY 4.0. Cite: Lin et al., "Microsoft COCO: Common Objects in Context", ECCV 2014.
 
 import os
 import json
@@ -17,8 +30,8 @@ from ultralytics import YOLO
 # ---------------- settings ----------------
 DST_DIR = "Dataset/merged_dataset_v3"
 STAGE = "Dataset/coco_stage"
-OWN_MODEL = "models/best.pt"   # your run4 model (29-class names are mapped to v3 below)
-OWN_CONF = 0.5
+OWN_MODEL = "models/yolo26n_best.pt"   # the new YOLO26n (better than run4); works with run4 too
+OWN_CONF = 0.4
 PREFIX = "coco_"
 APPLY = True
 SEED = 0
@@ -26,7 +39,7 @@ SEED = 0
 # how many images to take per COCO class (an image can count for several), then fill up to N_TOTAL
 PER_CLASS = {"cow": 600, "horse": 600, "sheep": 400, "stop sign": 700, "fire hydrant": 500,
              "dog": 500, "bench": 400, "traffic light": 500, "motorcycle": 500, "bicycle": 400,
-             "bus": 300, "truck": 300, "suitcase": 200}
+             "bus": 300, "truck": 300}
 N_TOTAL = 5000
 FILL_WITH = ["person", "car"]  # the rest: street photos with people / cars
 SPLIT = {"train": 0.8, "valid": 0.1, "test": 0.1}
@@ -39,12 +52,12 @@ COCO_TO_V3 = {
     "traffic light": "traffic_light", "fire hydrant": "fire_hydrant", "stop sign": "stop_sign",
     "parking meter": "pole", "bench": "bench", "dog": "dog",
     "cow": "animal", "horse": "animal", "sheep": "animal",
-    "chair": "chair", "dining table": "table", "potted plant": "obstacle", "suitcase": "obstacle",
+    "chair": "chair", "dining table": "table",
 }
 # your old (29-class) model names -> v3 names, ONLY for classes COCO does not label
 OWN_FILL = {
-    "pole": "pole", "tree": "tree", "stairs": "stairs", "door": "door", "shelf": "shelf", "bin": "bin",
-    "fire_extinguisher": "fire_extinguisher", "obstacle": "obstacle", "branch": "obstacle",
+    "pole": "pole", "stairs": "stairs", "door": "door", "shelf": "shelf", "bin": "bin",
+    "fire_extinguisher": "fire_extinguisher", "obstacle": "obstacle",
     "pothole": "pothole", "crosswalk": "crosswalk", "traffic_cone": "traffic_cone", "elevator": "elevator",
 }
 
@@ -133,7 +146,7 @@ print("downloaded:", ok, "of", len(chosen))
 
 # 4. labels: COCO boxes + your model's boxes for the classes COCO lacks
 model = YOLO(OWN_MODEL)
-own_map = {i: v3_id[OWN_FILL[n]] for i, n in model.names.items() if n in OWN_FILL}
+own_map = {i: v3_id[OWN_FILL[n]] for i, n in model.names.items() if n in OWN_FILL and OWN_FILL[n] in v3_id}
 box_count = Counter()
 own_count = Counter()
 labelled = []
