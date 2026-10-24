@@ -10,8 +10,8 @@ from fusion_engine import FusionEngine, keep_detections, MIN_CONF
 from caption import Captioner
 
 # ---------- settings ----------
-model_path = "models/best.pt"
-camera_index = "http://10.25.32.180:4747/video"         
+model_path = "models/yolo_26n_clean.pt"
+camera_index = "http://10.25.48.162:4747/video"         
 image_size = 480          # lower = faster video (416 is faster still), 640 = best accuracy
 min_conf = MIN_CONF       # lowest per-class threshold; fusion_engine applies the real per-class ones
 use_captions = True       # BLIP scene descriptions, press c to turn them on / off

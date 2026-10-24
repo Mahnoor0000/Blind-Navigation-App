@@ -1,12 +1,14 @@
 import re
 import time
+from collections import deque, Counter
+
 
 # things that can hurt the user, spoken first and repeated more often
-HAZARD_CLASSES = {"person", "vehicle", "cycle", "stairs", "obstacle", "pole", "pothole",
-                  "traffic_cone", "bench", "fire_hydrant", "branch", "dog"}
+HAZARD_CLASSES = {"person", "vehicle", "stairs", "obstacle", "pole", "pothole",
+                  "traffic_cone", "bench", "fire_hydrant", "dog", "animal"}
 
-# classes that are never spoken (tree is not reliable yet)
-IGNORE_CLASSES = {"tree", "bushes"}
+# classes that are never spoken (none at the moment; add a class here to silence it)
+IGNORE_CLASSES = set()
 
 # minimum confidence per class. Low for dangerous classes the model is unsure about
 # (better a false alarm than a missed staircase), higher for everything else.
@@ -14,24 +16,18 @@ IGNORE_CLASSES = {"tree", "bushes"}
 CLASS_CONF = {
     "stairs": 0.25,
     "pothole": 0.25,
-    "person": 0.30,      # person recall is only ~0.57, so accept less certain people
+    "person": 0.30,      # person recall is only ~0.60 (YOLO26n test), so accept less certain people
     "vehicle": 0.35,
     "obstacle": 0.35,
 }
-DEFAULT_CONF = 0.45
+DEFAULT_CONF = 0.55       # raised from 0.45: live video gave false bench / parking meter
 MIN_CONF = min(list(CLASS_CONF.values()) + [DEFAULT_CONF])   # run YOLO at this confidence
 
-# the model confuses these with stairs (green light 0.65, fire hydrant 0.58 on stair photos),
-# so they are dropped whenever stairs are in the same frame
-CONFUSED_WITH_STAIRS = {"green_light", "red_light", "yellow_light", "fire_hydrant"}
+CONFUSED_WITH_STAIRS = {"traffic_light", "fire_hydrant"}
 
-# light colours are often mixed up (green called yellow or red), so never speak a colour:
-# telling a blind user "green light" when it is red would be dangerous
-SPEAK_AS = {
-    "red_light": "traffic light",
-    "green_light": "traffic light",
-    "yellow_light": "traffic light",
-}
+# spoken names that differ from the class name (light colours are no longer separate classes,
+# so the model can never say "green light" when it is red)
+SPEAK_AS = {}
 # never say "up" or "down" for stairs: the model cannot tell. Add a warning word instead.
 CAREFUL_CLASSES = {"stairs", "pothole"}
 
@@ -39,9 +35,11 @@ CAREFUL_CLASSES = {"stairs", "pothole"}
 # (BLIP invented a stop sign in the tests). word in caption -> YOLO classes that confirm it
 CAPTION_CHECKS = {
     r"\bstop signs?\b": {"stop_sign"},
-    r"\btraffic lights?\b": {"traffic_light", "red_light", "green_light", "yellow_light"},
+    r"\btraffic lights?\b": {"traffic_light"},
     r"\b(stairs?|staircases?|steps)\b": {"stairs"},
-    r"\b(cars?|trucks?|bus|buses|motorbikes?|motorcycles?|bicycles?|bikes?)\b": {"vehicle", "cycle"},
+    r"\b(cars?|trucks?|bus|buses|motorbikes?|motorcycles?|bicycles?|bikes?)\b": {"vehicle"},
+    r"\b(cows?|horses?|sheep|goats?|donkeys?|buffalo(es)?)\b": {"animal"},
+    r"\b(dogs?|puppy|puppies)\b": {"dog"},
 }
 # BLIP guessed the wrong direction for stairs ("leading up" on stairs going down): cut it off
 STAIR_DIRECTION = re.compile(r"\s*\b(leading|going|that lead|which lead)\s+(up|down)\b.*$")
@@ -77,7 +75,8 @@ def keep_detections(detections):
 
 class FusionEngine:
     def __init__(self, caption_interval=4.0, min_caption_gap=2.0,
-                 hazard_cooldown=4.0, normal_cooldown=8.0, max_phrases=2):
+                 hazard_cooldown=4.0, normal_cooldown=8.0, max_phrases=2,
+                 history=5, persist=3):
         self.caption_interval = caption_interval      # ask for a caption at least this often
         self.min_caption_gap = min_caption_gap        # but never more often than this
         self.hazard_cooldown = hazard_cooldown        # seconds before a hazard is repeated
@@ -90,6 +89,10 @@ class FusionEngine:
         self.new_objects = False
         self.last_spoken = {}
         self.pending_keys = []
+        # an object is only announced if it was seen in `persist` of the last `history` frames.
+        # a false detection usually flickers in for a single frame; a real object stays.
+        self.history = deque(maxlen=history)
+        self.persist = persist
 
     def process(self, detections, now=None):
         # detections: list of dicts {"label": "person", "conf": 0.6, "area": 0.1, "x_center": 0.5}
@@ -98,6 +101,11 @@ class FusionEngine:
             now = time.time()
 
         usable = keep_detections(detections)
+
+        # temporal smoothing: drop labels that were not seen in enough recent frames
+        self.history.append({d["label"] for d in usable})
+        counts = Counter(label for frame_labels in self.history for label in frame_labels)
+        usable = [d for d in usable if counts[d["label"]] >= self.persist]
 
         # did something new appear since the last frame?
         labels = {d["label"] for d in usable}
