@@ -7,11 +7,9 @@ from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
 # fine-tuned on VizWiz; best on the 31 own photos with setting A (CIDEr 1.019)
-model_name = "models/blip_vizwiz"
-
-# setting A: no prompt, 3 beams
-PROMPT = None          
-GEN_OPTIONS = dict(num_beams=3, max_new_tokens=30, repetition_penalty=1.3)
+model_name = "models/blip_qwen_drop"
+PROMPT = None
+GEN_OPTIONS = dict(num_beams=1, max_new_tokens=30, no_repeat_ngram_size=3)
 
 
 class Captioner:

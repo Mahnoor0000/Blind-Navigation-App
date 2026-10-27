@@ -1,17 +1,3 @@
-# Tries several BLIP generation settings on your caption test photos and compares them.
-# Plain captions only (no YOLO). Same images and references as blip_caption_test.py.
-#
-# Run from the FYP1 folder:
-#     python scripts/blip_settings_sweep.py
-#
-# Output:
-#   test_results/sweep_captions.csv   every caption from every setting, side by side
-#   test_results/sweep_summary.txt    BLEU-4, CIDEr, caption length and time per setting
-#
-# Takes about (number of settings) x 31 images x ~5 s  -> roughly 15-20 minutes on CPU.
-
-print("starting... (loading libraries can take a minute)", flush=True)
-
 import os
 import re
 import csv
@@ -42,6 +28,7 @@ SETTINGS = [
                                               repetition_penalty=1.3, no_repeat_ngram_size=3)),
 ]
 # ------------------------------------------
+print("starting... (loading libraries can take a minute)", flush=True)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("loading BLIP on", device, "...", flush=True)
