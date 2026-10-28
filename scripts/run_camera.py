@@ -4,6 +4,7 @@ import queue
 import subprocess
 
 import cv2
+import torch
 from ultralytics import YOLO
 
 from fusion_engine import FusionEngine, keep_detections, MIN_CONF
@@ -11,10 +12,22 @@ from caption import Captioner
 
 # ---------- settings ----------
 model_path = "models/yolo_26n_clean.pt"
-camera_index = "http://10.25.48.162:4747/video"         
+camera_index = "http://10.25.29.18:4747/video"
 image_size = 480          # lower = faster video (416 is faster still), 640 = best accuracy
 min_conf = MIN_CONF       # lowest per-class threshold; fusion_engine applies the real per-class ones
 use_captions = True       # BLIP scene descriptions, press c to turn them on / off
+max_frame_width = 640     # phone streams arrive as 1280x720; shrink them to save memory and time
+cpu_threads = 4           # YOLO and BLIP run at the same time; stop them fighting over every core
+show_memory = True        # prints RAM use every 15 s, so you can see if it keeps growing
+
+torch.set_num_threads(cpu_threads)
+cv2.setNumThreads(1)
+
+try:
+    import psutil
+    process = psutil.Process()
+except ImportError:          # pip install psutil to see memory use
+    process = None
 
 
 # ---------- voice ----------
@@ -83,7 +96,8 @@ caption_state = {"busy": False, "text": "", "time": 0.0, "labels": set()}
 
 def caption_worker(frame, labels):
     try:
-        text = captioner.caption(frame)
+        with torch.inference_mode():
+            text = captioner.caption(frame)
     except Exception as error:
         print("caption error:", error)
         text = ""
@@ -115,22 +129,32 @@ class Camera:
 
     def _reader(self):
         while running:
-            if self.cap is None or not self.cap.isOpened():
-                self.cap = self._open()
-                if not self.cap.isOpened():
-                    print("camera not reachable, retrying in 2 s...")
-                    time.sleep(2)
+            try:
+                if self.cap is None or not self.cap.isOpened():
+                    self.cap = self._open()
+                    if not self.cap.isOpened():
+                        print("camera not reachable, retrying in 2 s...")
+                        time.sleep(2)
+                        continue
+                    print("camera connected")
+                ok, frame = self.cap.read()
+                if not ok:
+                    print("camera stream dropped, reconnecting...")
+                    self.cap.release()
+                    self.cap = None
+                    time.sleep(1)
                     continue
-                print("camera connected")
-            ok, frame = self.cap.read()
-            if not ok:
-                print("camera stream dropped, reconnecting...")
-                self.cap.release()
-                self.cap = None
-                time.sleep(1)
-                continue
-            with self.lock:
-                self.frame = frame
+                # shrink big phone frames (1280x720 -> 640x360)
+                h, w = frame.shape[:2]
+                if w > max_frame_width:
+                    frame = cv2.resize(frame, (max_frame_width, int(h * max_frame_width / w)),
+                                       interpolation=cv2.INTER_AREA)
+                with self.lock:
+                    self.frame = frame
+            except cv2.error as error:
+                # e.g. out of memory for one frame: skip it instead of killing the camera thread
+                print("camera read error, retrying:", error)
+                time.sleep(0.5)
 
     def read(self):
         with self.lock:
@@ -155,6 +179,7 @@ pending_caption = ""
 pending_caption_time = 0.0
 fps = 0.0
 last_time = time.time()
+last_memory_print = 0.0
 # open the camera only now, after the slow model loading, so a phone stream does not time out
 cam = Camera(camera_index)
 print("running. press q to quit, m to mute the voice, c to turn captions on / off")
@@ -167,7 +192,8 @@ while True:
             break
         continue
 
-    results = model(frame, imgsz=image_size, conf=min_conf, verbose=False)[0]
+    with torch.inference_mode():
+        results = model(frame, imgsz=image_size, conf=min_conf, verbose=False)[0]
     height, width = frame.shape[:2]
 
     # turn the yolo boxes into simple dictionaries for the fusion engine
@@ -198,8 +224,11 @@ while True:
     # 3. speak a finished caption, but only if nothing urgent was said this frame
     #    (captions are checked against YOLO: a caption naming a hazard YOLO did not see is dropped)
     if caption_state["text"] != "":
-        text = engine.clean_caption(caption_state["text"], caption_state["labels"])
+        raw = caption_state["text"]
+        text = engine.clean_caption(raw, caption_state["labels"])
         caption_state["text"] = ""
+        if text != raw:
+            print("raw caption  :", raw)      # shows what fusion_engine cut or dropped
         if text != "":
             shown_caption = text
             print("caption:", text)
@@ -218,6 +247,11 @@ while True:
     now = time.time()
     fps = 0.9 * fps + 0.1 * (1.0 / max(now - last_time, 0.001))
     last_time = now
+
+    if show_memory and process is not None and now - last_memory_print > 15:
+        print(f"[memory] {process.memory_info().rss / 1e9:.2f} GB used by this program | "
+              f"{psutil.virtual_memory().percent:.0f}% of laptop RAM in use")
+        last_memory_print = now
 
     # draw the video with the boxes, the fps and the last caption
     picture = results.plot()
