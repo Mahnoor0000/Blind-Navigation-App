@@ -1,11 +1,3 @@
-"""
-Sanity-check a YOLO-format dataset by drawing its labels back onto a
-random sample of images. Run this after any conversion/merge/remap step,
-BEFORE spending hours training on data you haven't actually looked at.
-
-Usage:
-    python scripts/verify_dataset.py --data path/to/data.yaml --split train --n 12
-"""
 
 import argparse
 import os

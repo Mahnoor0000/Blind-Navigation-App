@@ -1,18 +1,12 @@
-# Runs the trained YOLO model on every image in test_images/
-# Saves pictures with boxes drawn to test_results/ and a CSV you can fill in by hand.
-#
-# Run from the FYP1 folder:
-#     python scripts/test_folder.py
-
 import os
 import csv
 from collections import Counter
 from ultralytics import YOLO
 
 # ---- settings ----
-model_path = "models/best.pt"     # your trained weights
-image_dir = "test_images_descending"
-out_dir = "test_results_descending"
+model_path = "models\\yolo_26n_clean.pt"    # your trained weights
+image_dir = "test_images"
+out_dir = "test_images_results"  # where to save the images with boxes and the CSV
 conf = 0.25                       # minimum confidence to show a box
 imgsz = 640                       # same size you trained with
 # ------------------

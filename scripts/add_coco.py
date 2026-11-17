@@ -1,17 +1,4 @@
-# Adds ~5,000 COCO images to merged_dataset_v3, using COCO's own (human) labels for the
-# classes COCO has, and YOUR model for your classes COCO doesn't label (door, pole, stairs...).
-#
-# Why your model too: a COCO photo with a door in it has no door box, so YOLO would learn
-# "door = background". Your model's confident boxes (conf >= OWN_CONF) fill that gap.
-#
-# Run from the FYP1 folder:
-#   1. python scripts/add_coco.py      downloads labels + images into Dataset/coco_stage,
-#                                      labels them, makes preview images. Nothing added yet.
-#                                      Safe to stop and rerun: finished downloads are kept.
-#   2. look at Dataset/coco_stage/preview (green = COCO label, orange = your model)
-#   3. set APPLY = True and run again  -> copies into merged_dataset_v3
-#
-# COCO is CC BY 4.0. Cite: Lin et al., "Microsoft COCO: Common Objects in Context", ECCV 2014.
+
 
 import os
 import json

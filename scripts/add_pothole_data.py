@@ -1,16 +1,3 @@
-# Adds a single-class (or few-class) dataset, e.g. potholes, into merged_dataset_v2.
-# Reads YOLO .txt labels AND Pascal VOC .xml labels.
-#
-# Problem it solves: a pothole dataset only labels potholes. People, cars, bikes etc. in
-# those photos have no boxes, so YOLO would learn they are background. This script runs a
-# COCO-pretrained YOLO over every new image and adds boxes for those classes too.
-#
-# Run from the FYP1 folder:
-#   1. python scripts/add_pothole_data.py          (DRY RUN: counts + preview images only)
-#   2. look at the images in Dataset/preview_added/
-#   3. set APPLY = True and run again               (actually copies into the dataset)
-#
-# Safe to run twice: images that are already there are skipped.
 
 import os
 import random

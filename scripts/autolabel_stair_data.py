@@ -1,26 +1,4 @@
-# Auto-labels UNLABELLED stairs photos with Grounding DINO (finds objects from a text prompt),
-# so you only have to delete the bad ones instead of drawing boxes yourself.
-# (YOLO-World returned zero boxes on your install, so this uses Grounding DINO via transformers.)
-#
-# Run from the FYP1 folder:
-#
-#   STEP 0  MODE = "check"
-#       python scripts/autolabel_stairs.py
-#       -> tries 5 images, prints the boxes found and the seconds per image. Nothing is saved.
-#
-#   STEP 1  MODE = "label"
-#       -> writes Dataset/stairs_autolabel/images + labels (YOLO format, class 0 = stairs)
-#       -> writes a small preview of every kept image to Dataset/stairs_autolabel/review/
-#          (images without a confident, sensibly sized box are skipped automatically)
-#
-#   REVIEW  open the review folder in Explorer (View > Extra large icons), Ctrl+click every
-#           preview where the box is wrong, and delete them together.
-#
-#   STEP 2  MODE = "finalize"
-#       -> removes every image whose preview you deleted
-#
-# Then merge Dataset/stairs_autolabel with add_pothole_data.py
-# (SRC_DIR = "Dataset/stairs_autolabel", PREFIX = "stairs3_", SRC_KEEP = {0: 5}).
+
 
 import os
 import time

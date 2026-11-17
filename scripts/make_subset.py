@@ -1,14 +1,5 @@
 # Makes a training subset of merged_dataset_v3 for Colab, WITHOUT capping big classes.
-#
-# Old make_subset used a per-class quota (max 800), which threw away person/vehicle images
-# and dropped their recall. Here:
-#   1. every class first gets at least FLOOR boxes (rare classes are picked first)
-#   2. the rest of the subset is filled with random images, so person / vehicle keep
-#      their natural share
-#
-# Run from the FYP1 folder:
-#   python scripts/make_subset_v3.py
-# Then upload Dataset/merged_subset_v3.zip to Google Drive, folder FYP/.
+
 
 import os
 import random

@@ -1,17 +1,4 @@
-# Tests BLIP captioning on your own photos and scores it against your reference captions.
-#
-# For every image marked use=yes in references.csv it makes two captions per model:
-#   plain    - BLIP on its own
-#   grounded - YOLO labels given to BLIP as a prompt ("a photo of a car and a person")
-# Then it scores both with BLEU-4 and CIDEr against ref1 (and ref2 if you filled it in),
-# and writes a CSV with columns for you to judge each caption by hand.
-#
-# Every model in BLIP_MODELS is run with the SAME decoding settings and cleanup as the app
-# (GEN_OPTIONS and clean_caption from caption.py), so the scores are directly comparable.
-#
-# Setup (once):   pip install pycocoevalcap
-# Run from the FYP1 folder:
-#     python scripts/blip_caption_test.py
+
 
 print("starting... (loading torch, YOLO and BLIP libraries can take a minute)", flush=True)
 

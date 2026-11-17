@@ -1,21 +1,4 @@
-"""
-Convert YOLO segmentation-format labels (class_id + polygon points) to
-YOLO detection-format labels (class_id + bbox), for training a detector
-(not a segmentation model) like plain YOLOv8n.
 
-Segmentation line:  class_id x1 y1 x2 y2 x3 y3 ... (variable length)
-Detection line:     class_id x_center y_center width height (always 5 numbers)
-
-Logic: for each polygon, take min/max x and min/max y across all its
-points -> that's the tightest bounding box around the shape.
-
-Verified: tested against two hand-built squares with known coordinates
-(0.1,0.1)-(0.3,0.3) and (0.5,0.4)-(0.7,0.6) -- output bbox center/size
-matched the expected values exactly.
-
-Usage:
-    python scripts/convert_seg_to_bbox.py --labels_dir path/to/labels/train --out_dir path/to/bbox_labels/train
-"""
 
 import argparse
 import os

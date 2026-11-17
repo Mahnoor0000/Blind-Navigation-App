@@ -1,14 +1,4 @@
-# Turns every cycle box (class 2) into vehicle (class 1) in merged_dataset_v2.
-#
-# Why: the model confused cycle and vehicle (VIAD scooters were labelled cycle,
-# motorcycles vehicle). For a walking user both mean "moving thing, step aside".
-#
-# Class ids do NOT shift. Class 2 stays in data.yaml with zero boxes, so pothole is
-# still 20, stairs still 5, and fusion_engine.py keeps working.
-#
-# Run from the FYP1 folder:
-#   python scripts/merge_cycle_into_vehicle.py            (dry run, only counts)
-#   set APPLY = True and run again                         (backs up labels, then changes them)
+
 
 import os
 import shutil

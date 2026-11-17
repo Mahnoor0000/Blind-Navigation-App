@@ -1,14 +1,4 @@
-"""
-Compare blip_vizwiz vs blip_nav_v3 on your own test photos (runs on laptop CPU).
 
-Usage (from your FYP1 folder):
-    python compare_31.py "TEST IMAGES FOR BLIP"
-
-Writes to test_results/:
-    blind_rating_31.csv   rate this first (A/B order is shuffled)
-    blind_key_31.csv      open only AFTER rating
-    timing_31.txt         seconds per caption for each model
-"""
 import os, sys, csv, time, random, glob
 import torch
 from PIL import Image

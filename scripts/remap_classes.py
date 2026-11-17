@@ -1,17 +1,3 @@
-# Builds merged_dataset_v3 from merged_dataset_v2 with fewer, cleaner classes:
-#   red / green / yellow_light -> traffic_light   (colours were confused; app says "traffic light" anyway)
-#   parking_meter              -> pole
-#   cycle (0), bushes, tree, branch, potted_plant -> removed
-#     (v3 first merged branch + potted_plant into obstacle: obstacle fell from 0.86 to 0.27 mAP50,
-#      so obstacle is kept clean now; tree was 0.31 mAP50 and the app ignores it)
-#   animal                     -> new, empty for now (COCO cows / horses / sheep get added later)
-#
-# merged_dataset_v2 is NOT changed. Images are hard-linked (no extra disk space) or copied.
-#
-# Run from the FYP1 folder:
-#   python scripts/remap_classes.py        (DRY RUN: prints old -> new class counts)
-#   set APPLY = True and run again          (writes Dataset/merged_dataset_v3)
-
 import os
 import shutil
 from collections import Counter
