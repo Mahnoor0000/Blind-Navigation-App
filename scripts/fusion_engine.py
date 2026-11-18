@@ -2,6 +2,12 @@ import re
 import time
 from collections import deque, Counter
 
+from spatial import spoken_distance
+
+# Class list (YOLO26n, merged_dataset_v3, 21 classes):
+#   person, vehicle, pole, stairs, door, chair, table, shelf, bin, fire_extinguisher, obstacle,
+#   traffic_light, stop_sign, fire_hydrant, bench, dog, pothole, crosswalk, traffic_cone,
+#   elevator, animal
 
 # things that can hurt the user, spoken first and repeated more often
 HAZARD_CLASSES = {"person", "vehicle", "stairs", "obstacle", "pole", "pothole",
@@ -23,6 +29,8 @@ CLASS_CONF = {
 DEFAULT_CONF = 0.55       # raised from 0.45: live video gave false bench / parking meter
 MIN_CONF = min(list(CLASS_CONF.values()) + [DEFAULT_CONF])   # run YOLO at this confidence
 
+# the old model confused these with stairs (green light 0.65, fire hydrant 0.58 on stair photos),
+# so they are dropped whenever stairs are in the same frame
 CONFUSED_WITH_STAIRS = {"traffic_light", "fire_hydrant"}
 
 # spoken names that differ from the class name (light colours are no longer separate classes,
@@ -45,22 +53,108 @@ CAPTION_CHECKS = {
 STAIR_DIRECTION = re.compile(r"\s*\b(leading|going|that lead|which lead)\s+(up|down)\b.*$")
 
 
+# ---------- spoken language ----------
+# "en" = English, "ur" = Urdu. Urdu needs the pre-made voice clips (python scripts/urdu_voice.py)
+LANGUAGE = "en"
+
+# Urdu words for the 21 classes (check with native speakers; easy to change here)
+UR_NAMES = {
+    "person": "شخص", "vehicle": "گاڑی", "pole": "کھمبا", "stairs": "سیڑھیاں",
+    "door": "دروازہ", "chair": "کرسی", "table": "میز", "shelf": "شیلف", "bin": "کوڑے دان",
+    "fire_extinguisher": "آگ بجھانے کا آلہ", "obstacle": "رکاوٹ", "traffic_light": "ٹریفک سگنل",
+    "stop_sign": "اسٹاپ کا نشان", "fire_hydrant": "فائر ہائیڈرنٹ", "bench": "بینچ", "dog": "کتا",
+    "pothole": "گڑھا", "crosswalk": "زیبرا کراسنگ", "traffic_cone": "ٹریفک کون",
+    "elevator": "لفٹ", "animal": "جانور",
+}
+POSITION_WORDS = {
+    "en": {"left": "on your left", "right": "on your right", "ahead": "ahead"},
+    "ur": {"left": "بائیں طرف", "right": "دائیں طرف", "ahead": "سامنے"},
+}
+DISTANCE_WORDS = {
+    "en": {"very_close": "very close", "close": "close", "": ""},
+    "ur": {"very_close": "بہت قریب", "close": "قریب", "": ""},
+}
+CAREFUL_WORD = {"en": "careful", "ur": "احتیاط کریں"}
+
+
 def where(x_center):
     # x_center is 0 (left edge) to 1 (right edge) of the picture
     if x_center < 0.33:
-        return "on your left"
+        return "left"
     if x_center > 0.66:
-        return "on your right"
+        return "right"
     return "ahead"
 
 
 def how_close(area):
     # area is how much of the picture the box covers, only a rough guess of distance
     if area > 0.25:
-        return "very close"
+        return "very_close"
     if area > 0.08:
         return "close"
     return ""
+
+
+def make_phrase(label, position, distance, lang=None):
+    # e.g. en: "stairs ahead, very close, careful"
+    #      ur: "سامنے سیڑھیاں، بہت قریب، احتیاط کریں"   (Urdu puts the position first)
+    lang = lang or LANGUAGE
+    if lang == "ur":
+        name = UR_NAMES.get(label, label.replace("_", " "))
+        parts = [POSITION_WORDS["ur"][position] + " " + name]
+    else:
+        name = SPEAK_AS.get(label, label.replace("_", " "))
+        parts = [name + " " + POSITION_WORDS["en"][position]]
+    if distance:
+        parts.append(DISTANCE_WORDS[lang][distance])
+    if label in CAREFUL_CLASSES:
+        parts.append(CAREFUL_WORD[lang])
+    return ("، " if lang == "ur" else ", ").join(parts)
+
+
+SIDE_WORDS = {"ahead": "ahead, in your path", "slightly left": "slightly left", "left": "on your left",
+              "slightly right": "slightly right", "right": "on your right"}
+
+
+def spatial_phrase(d):
+    # uses the fields from spatial.py: side, in_path, distance(_smooth), rough, ttc
+    # e.g. "person ahead, in your path, about 2 metres, approaching"
+    #      "chair slightly left, about 3 metres"      "stairs on your right, close, careful"
+    name = SPEAK_AS.get(d["label"], d["label"].replace("_", " "))
+    parts = [name + " " + SIDE_WORDS[d["side"]]]
+    dist = d.get("distance_smooth") or d.get("distance")
+    if dist:
+        if d.get("rough"):
+            # the distance cues disagree: only say near / far, never a wrong number
+            if dist < 3:
+                parts.append("close")
+        elif d.get("at_most") and not d.get("d_box") and not d.get("d_ground"):
+            parts.append("very close")
+        else:
+            parts.append(spoken_distance(dist))
+    ttc = d.get("ttc")
+    if ttc is not None and ttc < 4 and d.get("in_path"):
+        parts.append("approaching")
+    if d["label"] in CAREFUL_CLASSES:
+        parts.append("careful")
+    return ", ".join(parts)
+
+
+def is_urgent(d):
+    # in the walking path and close, or getting close fast
+    dist = d.get("distance_smooth") or d.get("distance")
+    return bool(d.get("in_path")) and ((dist is not None and dist < 2) or
+                                       (d.get("ttc") is not None and d["ttc"] < 2.5))
+
+
+def all_phrases(lang):
+    # every phrase the engine can say (21 classes x 3 positions x 3 distances), for pre-made voice clips
+    out = []
+    for label in UR_NAMES:
+        for position in ("left", "ahead", "right"):
+            for distance in ("", "close", "very_close"):
+                out.append(make_phrase(label, position, distance, lang))
+    return out
 
 
 def keep_detections(detections):
@@ -76,7 +170,9 @@ def keep_detections(detections):
 class FusionEngine:
     def __init__(self, caption_interval=4.0, min_caption_gap=2.0,
                  hazard_cooldown=4.0, normal_cooldown=8.0, max_phrases=2,
-                 history=5, persist=3):
+                 history=5, persist=3, lang=None, urgent_cooldown=2.0):
+        self.urgent_cooldown = urgent_cooldown        # things in your path and close are repeated sooner
+        self.lang = lang or LANGUAGE
         self.caption_interval = caption_interval      # ask for a caption at least this often
         self.min_caption_gap = min_caption_gap        # but never more often than this
         self.hazard_cooldown = hazard_cooldown        # seconds before a hazard is repeated
@@ -112,8 +208,14 @@ class FusionEngine:
         self.new_objects = len(labels - self.last_seen_labels) > 0
         self.last_seen_labels = labels
 
-        # hazards first, then the biggest (closest) ones
-        usable.sort(key=lambda d: (d["label"] in HAZARD_CLASSES, d["area"]), reverse=True)
+        # with distances (spatial.py): urgent first, then in your path, hazards, nearest
+        # without: hazards first, then the biggest (closest) ones
+        def priority(d):
+            if "side" in d:
+                dist = d.get("distance_smooth") or d.get("distance") or 99
+                return (is_urgent(d), bool(d.get("in_path")), d["label"] in HAZARD_CLASSES, -dist)
+            return (False, False, d["label"] in HAZARD_CLASSES, d["area"])
+        usable.sort(key=priority, reverse=True)
 
         phrases = []
         keys = []
@@ -121,26 +223,24 @@ class FusionEngine:
             if len(phrases) >= self.max_phrases:
                 break
 
-            name = SPEAK_AS.get(d["label"], d["label"].replace("_", " "))
-            position = where(d["x_center"])
-            key = name + "_" + position
+            position = d["side"] if "side" in d else where(d["x_center"])
+            key = d["label"] + "_" + position
             if key in keys:
                 continue
 
-            if d["label"] in HAZARD_CLASSES:
+            if "side" in d and is_urgent(d):
+                cooldown = self.urgent_cooldown
+            elif d["label"] in HAZARD_CLASSES:
                 cooldown = self.hazard_cooldown
             else:
                 cooldown = self.normal_cooldown
             if key in self.last_spoken and now - self.last_spoken[key] < cooldown:
                 continue
 
-            phrase = name + " " + position
-            distance = how_close(d["area"])
-            if distance != "":
-                phrase = phrase + ", " + distance
-            if d["label"] in CAREFUL_CLASSES:
-                phrase = phrase + ", careful"
-            phrases.append(phrase)
+            if "side" in d and self.lang == "en":
+                phrases.append(spatial_phrase(d))
+            else:
+                phrases.append(make_phrase(d["label"], where(d["x_center"]), how_close(d["area"]), self.lang))
             keys.append(key)
 
         self.pending_keys = keys
@@ -187,6 +287,6 @@ class FusionEngine:
 
         self.last_caption = text
         words = text.split()
-        if len(words) > 14:
-            text = " ".join(words[:14])
+        if len(words) > 25:                  # v2 captions describe the whole scene (up to ~25 words)
+            text = " ".join(words[:25])
         return text
