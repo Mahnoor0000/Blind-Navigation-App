@@ -1,3 +1,5 @@
+
+
 import os
 import csv
 import math
@@ -9,6 +11,11 @@ import torch
 from PIL import Image, ImageOps
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 from ultralytics import YOLO
+
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from spatial import Spatial
+from fusion_engine import spatial_phrase
 
 # ---------------- settings ----------------
 IMAGE_DIR = "TEST IMAGES FOR BLIP"
@@ -25,12 +32,10 @@ INDOOR_SCENES = {"indoor", "stairs", "entrance"}       # scene names from refere
 DEFAULT_DEPTH = "outdoor"                              # for images not in references.csv
 HFOV_DEG = 70                                          # phone main camera field of view along the long side (typical 65-80)
 
-# real heights in metres, for the box-height method (only classes with a fairly fixed size)
-KNOWN_HEIGHT = {
-    "person": 1.65, "door": 2.0, "vehicle": 1.5, "elevator": 2.1, "fire_hydrant": 0.75,
-    "traffic_cone": 0.7, "stop_sign": 0.75, "fire_extinguisher": 0.5, "bin": 0.9, "chair": 0.9,
-    "bench": 0.8, "dog": 0.6,
-}
+CAMERA_HEIGHT = 1.3                                    # metres above the floor when the photos were taken
+PHOTO_PITCH_DEG = 5                                    # camera tilt down if no person / door / car tells us
+
+# known object heights, floor classes, sitting-person rule: see spatial.py
 # ------------------------------------------
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -51,6 +56,7 @@ images = sorted(f for f in os.listdir(IMAGE_DIR) if f.lower().endswith((".jpg", 
 print("images:", len(images), flush=True)
 
 yolo = YOLO(YOLO_MODEL)
+spatial = Spatial(cam_height=CAMERA_HEIGHT, auto_pitch=False)
 depth_models = {}
 
 
@@ -117,10 +123,11 @@ for fname in images:
     depth = depth_map(img, kind)
     t_depth.append(time.time() - t0)
     f_px, f_src = focal_px(img)
+    spatial.hfov_deg = math.degrees(2 * math.atan(max(W, H) / (2 * f_px)))   # same focal as box height
 
     canvas = np.array(img)[:, :, ::-1].copy()
     print(f"\n{fname}  [{kind} depth model, {t_depth[-1]:.2f} s]")
-    img_rows = []
+    boxes = []
     for b in det.boxes:
         x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
         label = yolo.names[int(b.cls)]
@@ -129,34 +136,44 @@ for fname in images:
         cy1, cy2 = y1 + (y2 - y1) // 4, y2 - (y2 - y1) // 4
         patch = depth[cy1:max(cy2, cy1 + 1), cx1:max(cx2, cx1 + 1)]
         d_model = float(np.median(patch)) if patch.size else float("nan")
-        # box height: only for known sizes and boxes not cut off at the top / bottom of the photo
-        cut = y1 <= 2 or y2 >= H - 3
-        d_box = (f_px * KNOWN_HEIGHT[label] / max(1, y2 - y1)) if label in KNOWN_HEIGHT and not cut else float("nan")
-        xc = (x1 + x2) / 2 / W
-        img_rows.append({"image": fname, "label": label, "conf": round(float(b.conf), 2), "position": where(xc),
-                     "depth_model_m": round(d_model, 2), "box_height_m": round(d_box, 2) if d_box == d_box else "",
-                     "box_h_px": y2 - y1, "depth_model": kind, "focal": f_src})
-        img_rows[-1]["_box"] = (x1, y1, x2, y2)
+        boxes.append((x1, y1, x2, y2, label, float(b.conf), d_model))
 
-    # hybrid: the depth model gets the ORDER right but its metre scale drifts, so rescale the whole
-    # depth map with the objects whose real size we know (median of box-height / depth-model)
-    ratios = [r["box_height_m"] / r["depth_model_m"] for r in img_rows
-              if r["box_height_m"] != "" and r["conf"] >= 0.5 and r["depth_model_m"] > 0]
+    # pass 1: box-height distances -> this photo's camera tilt and depth-map scale
+    spatial.pitch_deg = PHOTO_PITCH_DEG
+    first = [spatial.measure(x1, y1, x2, y2, lab, W, H) for x1, y1, x2, y2, lab, c, dm in boxes]
+    pitches = [m["pitch_obs"] for m, bx in zip(first, boxes) if m["pitch_obs"] is not None and bx[5] >= 0.5]
+    pitch = float(np.median(pitches)) if pitches else PHOTO_PITCH_DEG
+    ratios = [m["d_box"] / bx[6] for m, bx in zip(first, boxes) if m["d_box"] and bx[5] >= 0.5 and bx[6] > 0]
     scale = float(np.median(ratios)) if ratios else None
-    for r in img_rows:
-        r["depth_scaled_m"] = round(r["depth_model_m"] * scale, 2) if scale else ""
-        r["scale"] = round(scale, 2) if scale else ""
-        best = r["depth_scaled_m"] if scale else r["depth_model_m"]
-        box_txt = f" | box {r['box_height_m']:.1f} m" if r["box_height_m"] != "" else ""
-        sc_txt = f" | scaled {r['depth_scaled_m']:.1f} m" if scale else ""
-        print(f"  {r['label']:18s} {r['position']:14s} depth model {r['depth_model_m']:5.1f} m{box_txt}{sc_txt}"
-              f"   -> say: \"{r['label'].replace('_', ' ')} {r['position']}, {spoken(best)}\"")
-        x1, y1, x2, y2 = r.pop("_box")
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 220, 0), 3)
-        cv2.putText(canvas, f"{r['label']} {best:.1f}m", (x1, max(25, y1 - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX, max(0.6, W / 1400), (0, 220, 0), 2)
-    if scale:
-        print(f"  (depth map rescaled x{scale:.2f} from {len(ratios)} known-size objects)")
+
+    # pass 2: all cues with this photo's tilt; fused = median of box height, ground contact, scaled depth
+    spatial.pitch_deg = pitch
+    img_rows = []
+    for (x1, y1, x2, y2, label, conf, d_model) in boxes:
+        d_scaled = d_model * scale if scale else None
+        m = spatial.measure(x1, y1, x2, y2, label, W, H, extra=(d_scaled,) if d_scaled else ())
+        r = {"image": fname, "label": label, "conf": round(conf, 2),
+             "side": m["side"], "in_path": m["in_path"], "clock": m["clock"],
+             "angle_deg": round(m["angle"], 1),
+             "depth_model_m": round(d_model, 2),
+             "box_height_m": round(m["d_box"], 2) if m["d_box"] else "",
+             "ground_m": round(m["d_ground"], 2) if m["d_ground"] else "",
+             "depth_scaled_m": round(d_scaled, 2) if d_scaled else "",
+             "fused_m": round(m["distance"], 2) if m["distance"] else "",
+             "rough": m["rough"], "cues": m["n_cues"],
+             "box_h_px": y2 - y1, "pitch_deg": round(pitch, 1), "scale": round(scale, 2) if scale else "",
+             "depth_model": kind, "focal": f_src}
+        img_rows.append(r)
+        say = spatial_phrase({**m, "label": label, "distance_smooth": m["distance"], "ttc": None})
+        cues = " | ".join(f"{k} {r[k + '_m']:.1f}" for k in ("box_height", "ground", "depth_scaled")
+                          if r[k + "_m"] != "")
+        print(f"  {label:16s} {m['side']:14s} fused {r['fused_m'] or '-':>5} m  ({cues})  -> \"{say}\"")
+        colour = (0, 0, 255) if m["in_path"] else (0, 220, 0)
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), colour, 3)
+        txt = f"{label} {m['distance']:.1f}m" + ("?" if m["rough"] else "") if m["distance"] else label
+        cv2.putText(canvas, txt, (x1, max(25, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, max(0.6, W / 1400), colour, 2)
+    print(f"  (tilt {pitch:.1f} deg from {len(pitches)} objects" +
+          (f", depth map rescaled x{scale:.2f})" if scale else ", depth map not rescaled)"))
     rows += img_rows
 
     # depth map in colour (near = warm, far = dark), next to the annotated photo
@@ -178,7 +195,7 @@ lines = [f"images: {len(images)} | objects: {len(rows)} | YOLO {YOLO_MODEL} conf
 
 # error against measured distances (largest box of that label in that photo)
 if truth:
-    errs = {"depth model": [], "box height": [], "depth scaled": []}
+    errs = {"depth model": [], "box height": [], "ground contact": [], "depth scaled": [], "FUSED": []}
     for t in truth:
         cand = [r for r in rows if r["image"] == t["image"] and r["label"] == t["label"]]
         if not cand:
@@ -189,8 +206,9 @@ if truth:
         errs["depth model"].append(abs(r["depth_model_m"] - true_m) / true_m)
         if r["box_height_m"] != "":
             errs["box height"].append(abs(r["box_height_m"] - true_m) / true_m)
-        if r["depth_scaled_m"] != "":
-            errs["depth scaled"].append(abs(r["depth_scaled_m"] - true_m) / true_m)
+        for key, col in (("ground contact", "ground_m"), ("depth scaled", "depth_scaled_m"), ("FUSED", "fused_m")):
+            if r[col] != "":
+                errs[key].append(abs(r[col] - true_m) / true_m)
     lines.append(f"\nmeasured objects: {len(truth)}")
     for k, e in errs.items():
         if e:
