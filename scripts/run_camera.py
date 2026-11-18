@@ -25,6 +25,9 @@ AUTO_PITCH = True
 image_size = 480          # lower = faster video (416 is faster still), 640 = best accuracy
 min_conf = MIN_CONF       # lowest per-class threshold; fusion_engine applies the real per-class ones
 use_captions = True       # BLIP scene descriptions, press c to turn them on / off
+CAPTION_EVERY = 15        # seconds between captions: BLIP takes 5-7 s of CPU and slows YOLO while it runs
+SPEECH_RATE = 3           # Windows voice speed, -10..10 (1 was slow; warnings must be quick)
+show_debug = False        # press d: print every detection with its distance cues to the console
 
 
 # ---------- voice ----------
@@ -33,7 +36,7 @@ use_captions = True       # BLIP scene descriptions, press c to turn them on / o
 speech_script = (
     "Add-Type -AssemblyName System.Speech; "
     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-    "$s.Rate = 1; "
+    f"$s.Rate = {SPEECH_RATE}; "
     "while (($line = [Console]::In.ReadLine()) -ne $null) { "
     "$s.Speak($line); [Console]::Out.WriteLine('done'); [Console]::Out.Flush() }"
 )
@@ -89,7 +92,27 @@ def speaker_loop():
         voice_busy.clear()
 
 
-def say(text):
+voice_kind = {"now": ""}          # "hazard" or "caption": what is being spoken right now
+
+
+def interrupt_caption():
+    # an urgent warning must not wait for a 6-second caption: stop the voice and start a fresh one
+    global voice
+    if voice_busy.is_set() and voice_kind["now"] == "caption":
+        old = voice
+        voice = start_voice()
+        try:
+            old.kill()          # the speaker thread's readline() returns, and the voice becomes free
+        except Exception:
+            pass
+        for _ in range(50):
+            if not voice_busy.is_set():
+                break
+            time.sleep(0.01)
+
+
+def say(text, kind="hazard"):
+    voice_kind["now"] = kind if not voice_busy.is_set() else voice_kind["now"]
     # returns True if the text was accepted, False if the voice is still busy
     if voice_busy.is_set():
         return False
@@ -201,7 +224,7 @@ model = YOLO(model_path)
 print("loading BLIP (the first time can take a while)...")
 captioner = Captioner()
 
-engine = FusionEngine(caption_interval=6.0)
+engine = FusionEngine(caption_interval=CAPTION_EVERY, min_caption_gap=CAPTION_EVERY / 2)
 spatial = Spatial(hfov_deg=HFOV_DEG, cam_height=CAMERA_HEIGHT, pitch_deg=CAMERA_PITCH_DEG, auto_pitch=AUTO_PITCH)
 tracker = Tracker()
 writer = None
@@ -215,7 +238,7 @@ fps = 0.0
 last_time = time.time()
 # open the camera only now, after the slow model loading, so a phone stream does not time out
 cam = VideoFile(camera_index) if is_file else Camera(camera_index)
-print("running. press q to quit, m to mute, c captions on / off, s to save a frame")
+print("running. q quit, m mute, c captions on/off, d debug print, s save frame")
 
 while True:
     frame = cam.read()
@@ -228,7 +251,9 @@ while True:
             break
         continue
 
+    t_yolo = time.time()
     results = model(frame, imgsz=image_size, conf=min_conf, verbose=False)[0]
+    yolo_ms = 1000 * (time.time() - t_yolo)
     height, width = frame.shape[:2]
 
     t_now = cam.time() if is_file else time.time()
@@ -253,6 +278,14 @@ while True:
 
     # 1. urgent things first (in your path and close, approaching, hazards)
     phrases = engine.process(detections, now=t_now if is_file else None)
+    if show_debug:
+        for d in keep_detections(detections):
+            cues = ", ".join(f"{k} {d[k]:.1f}" for k in ("d_box", "d_ground", "at_most") if d.get(k))
+            print(f"  {d['label']:14s} {d['side']:14s} dist {d.get('distance_smooth') or 0:4.1f} m"
+                  f"{' rough' if d['rough'] else ''} [{cues or 'no cue'}] ttc {d.get('ttc')}")
+    if any("ahead" in p and ("approaching" in p or "under 1" in p or "very close" in p or " 1 metre" in p)
+           for p in phrases):
+        interrupt_caption()       # something close in your path: cut the caption short
     if len(phrases) > 0 and not muted:
         if say(phrases if urdu is not None else ". ".join(phrases)):
             engine.confirm_spoken()
@@ -280,7 +313,7 @@ while True:
     if pending_caption != "":
         if time.time() - pending_caption_time > 8:
             pending_caption = ""                # the scene has probably changed
-        elif len(phrases) == 0 and not muted and say(pending_caption):
+        elif len(phrases) == 0 and not muted and say(pending_caption, kind="caption"):
             print("saying caption:", pending_caption)
             pending_caption = ""
 
@@ -307,8 +340,10 @@ while True:
     half = int(f * spatial.path_half_width / 3)
     cv2.line(picture, (width // 2 - half, height), (width // 2 - half, height // 2), (255, 255, 0), 1)
     cv2.line(picture, (width // 2 + half, height), (width // 2 + half, height // 2), (255, 255, 0), 1)
-    cv2.putText(picture, f"FPS: {int(fps)}  tilt: {spatial.pitch_deg:.0f} deg", (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+    status = (f"FPS {fps:.1f} | YOLO {yolo_ms:.0f} ms | tilt {spatial.pitch_deg:.0f} deg | "
+              f"{'captioning...' if caption_state['busy'] else 'caption idle'} | "
+              f"{'speaking' if voice_busy.is_set() else 'voice free'}")
+    cv2.putText(picture, status, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
     cv2.rectangle(picture, (0, height - 36), (width, height), (0, 0, 0), -1)
     cv2.putText(picture, shown_caption, (10, height - 12),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -327,6 +362,9 @@ while True:
     if pressed == ord("m"):
         muted = not muted
         print("muted" if muted else "voice on")
+    if pressed == ord("d"):
+        show_debug = not show_debug
+        print("debug on" if show_debug else "debug off")
     if pressed == ord("c"):
         use_captions = not use_captions
         print("captions on" if use_captions else "captions off")

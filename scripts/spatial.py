@@ -1,3 +1,4 @@
+import math
 from collections import deque
 
 # real heights in metres (only classes with a fairly fixed size)
@@ -11,6 +12,7 @@ ON_GROUND = {
     "fire_hydrant", "bench", "dog", "pothole", "crosswalk", "traffic_cone", "elevator", "animal",
 }
 MIN_PERSON_ASPECT = 2.0     # box height / width below this = sitting or half-hidden person
+CALIB_LABELS = {"person", "door", "vehicle"}   # sizes reliable enough to learn the camera tilt from
 
 
 def median(values):
@@ -19,17 +21,19 @@ def median(values):
     return None if n == 0 else (v[n // 2] if n % 2 else 0.5 * (v[n // 2 - 1] + v[n // 2]))
 
 
-def spoken_distance(m):
-    # how a distance is said: rounded, never falsely precise
+def spoken_distance(m, rough=False):
+    # short and rounded (speech must be quick); when the cues disagree, only a coarse range
+    if rough:
+        return "very close" if m < 1.5 else "close" if m < 3 else "a few metres" if m < 6 else "far"
     if m < 1:
-        return "less than 1 metre"
+        return "under 1 metre"
     r = round(m * 2) / 2 if m < 4 else round(m)
-    return f"about {r:g} metre" + ("" if r == 1 else "s")
+    return f"{r:g} metre" + ("" if r == 1 else "s")
 
 
 class Spatial:
     def __init__(self, hfov_deg=70.0, cam_height=1.3, pitch_deg=10.0, auto_pitch=True,
-                 path_half_width=0.45, max_disagree=1.6):
+                 path_half_width=0.45, max_disagree=2.0):
         self.hfov_deg = hfov_deg              # camera field of view along the LONG side of the image
         self.cam_height = cam_height          # metres above the floor (phone held at chest ~1.3 m)
         self.pitch_deg = pitch_deg            # how far the camera is tilted DOWN (degrees)
@@ -66,7 +70,7 @@ class Spatial:
 
         # what tilt would make the ground cue agree with the box-height cue (for auto calibration)
         out["pitch_obs"] = None
-        if d_box and label in ON_GROUND and not cut_bottom:
+        if d_box and label in CALIB_LABELS and not cut_bottom:
             out["pitch_obs"] = math.degrees(math.atan(self.cam_height / d_box) - math.atan((y2 - cy) / f))
 
         # 3. fuse

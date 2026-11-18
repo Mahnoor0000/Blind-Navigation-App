@@ -1,3 +1,4 @@
+import math
 import re
 import time
 from collections import deque, Counter
@@ -8,6 +9,8 @@ from spatial import spoken_distance
 #   person, vehicle, pole, stairs, door, chair, table, shelf, bin, fire_extinguisher, obstacle,
 #   traffic_light, stop_sign, fire_hydrant, bench, dog, pothole, crosswalk, traffic_cone,
 #   elevator, animal
+# (cycle merged into vehicle; red/green/yellow light merged into traffic_light;
+#  parking_meter merged into pole; tree, bushes, branch, potted_plant removed)
 
 # things that can hurt the user, spoken first and repeated more often
 HAZARD_CLASSES = {"person", "vehicle", "stairs", "obstacle", "pole", "pothole",
@@ -112,28 +115,26 @@ def make_phrase(label, position, distance, lang=None):
     return ("، " if lang == "ur" else ", ").join(parts)
 
 
-SIDE_WORDS = {"ahead": "ahead, in your path", "slightly left": "slightly left", "left": "on your left",
-              "slightly right": "slightly right", "right": "on your right"}
+SIDE_WORDS = {"ahead": "ahead", "slightly left": "slightly left", "left": "left",
+              "slightly right": "slightly right", "right": "right"}
 
 
 def spatial_phrase(d):
-    # uses the fields from spatial.py: side, in_path, distance(_smooth), rough, ttc
-    # e.g. "person ahead, in your path, about 2 metres, approaching"
-    #      "chair slightly left, about 3 metres"      "stairs on your right, close, careful"
+    # short on purpose (every word costs speaking time while walking), e.g.
+    #   "person ahead, 2 metres, approaching"   "chair slightly left, 3 metres"   "stairs right, close, careful"
+    # "ahead" means in your walking path (spatial.py)
     name = SPEAK_AS.get(d["label"], d["label"].replace("_", " "))
     parts = [name + " " + SIDE_WORDS[d["side"]]]
     dist = d.get("distance_smooth") or d.get("distance")
     if dist:
-        if d.get("rough"):
-            # the distance cues disagree: only say near / far, never a wrong number
-            if dist < 3:
-                parts.append("close")
-        elif d.get("at_most") and not d.get("d_box") and not d.get("d_ground"):
-            parts.append("very close")
+        if d.get("at_most") and not d.get("d_box") and not d.get("d_ground"):
+            # the object goes below the picture: we only know it is closer than the bottom edge
+            limit = math.ceil(d["at_most"])
+            parts.append("very close" if limit <= 1 else f"within {limit} metres")
         else:
-            parts.append(spoken_distance(dist))
+            parts.append(spoken_distance(dist, rough=d.get("rough", False)))
     ttc = d.get("ttc")
-    if ttc is not None and ttc < 4 and d.get("in_path"):
+    if ttc is not None and ttc < 3 and d.get("in_path"):
         parts.append("approaching")
     if d["label"] in CAREFUL_CLASSES:
         parts.append("careful")
