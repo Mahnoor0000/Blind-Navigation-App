@@ -9,8 +9,6 @@ from spatial import spoken_distance
 #   person, vehicle, pole, stairs, door, chair, table, shelf, bin, fire_extinguisher, obstacle,
 #   traffic_light, stop_sign, fire_hydrant, bench, dog, pothole, crosswalk, traffic_cone,
 #   elevator, animal
-# (cycle merged into vehicle; red/green/yellow light merged into traffic_light;
-#  parking_meter merged into pole; tree, bushes, branch, potted_plant removed)
 
 # things that can hurt the user, spoken first and repeated more often
 HAZARD_CLASSES = {"person", "vehicle", "stairs", "obstacle", "pole", "pothole",
@@ -185,6 +183,8 @@ class FusionEngine:
         self.last_seen_labels = set()
         self.new_objects = False
         self.last_spoken = {}
+        self.last_phrase = {}                         # what was said for each object, to avoid repeats
+        self.pending_phrases = {}
         self.pending_keys = []
         # an object is only announced if it was seen in `persist` of the last `history` frames.
         # a false detection usually flickers in for a single frame; a real object stays.
@@ -229,8 +229,11 @@ class FusionEngine:
             if key in keys:
                 continue
 
-            if "side" in d and is_urgent(d):
-                cooldown = self.urgent_cooldown
+            phrase = (spatial_phrase(d) if "side" in d and self.lang == "en"
+                      else make_phrase(d["label"], where(d["x_center"]), how_close(d["area"]), self.lang))
+            changed = self.last_phrase.get(key) != phrase
+            if "side" in d and is_urgent(d) and changed:
+                cooldown = self.urgent_cooldown       # quick repeat only if something changed
             elif d["label"] in HAZARD_CLASSES:
                 cooldown = self.hazard_cooldown
             else:
@@ -238,11 +241,9 @@ class FusionEngine:
             if key in self.last_spoken and now - self.last_spoken[key] < cooldown:
                 continue
 
-            if "side" in d and self.lang == "en":
-                phrases.append(spatial_phrase(d))
-            else:
-                phrases.append(make_phrase(d["label"], where(d["x_center"]), how_close(d["area"]), self.lang))
+            phrases.append(phrase)
             keys.append(key)
+            self.pending_phrases[key] = phrase
 
         self.pending_keys = keys
         return phrases
@@ -253,6 +254,9 @@ class FusionEngine:
             now = time.time()
         for key in self.pending_keys:
             self.last_spoken[key] = now
+            if key in self.pending_phrases:
+                self.last_phrase[key] = self.pending_phrases[key]
+        self.pending_phrases = {}
         self.pending_keys = []
 
     def caption_due(self, now=None):

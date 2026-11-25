@@ -21,7 +21,7 @@ BLIP_MODELS = {                                        # run name -> model folde
     "blip_vizwiz": "models/blip_vizwiz",
     "blip_nav_v3": "models/blip_nav_v3",
 }
-YOLO_MODEL = "models/best.pt"                          # run4
+YOLO_MODEL = "models/yolo_26n_clean.pt"                          # run4
 YOLO_CONF = 0.35
 MAX_LABELS = 3
 OUT_DIR = "test_results"
