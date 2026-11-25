@@ -1,16 +1,3 @@
-# Finds a confidence threshold for every YOLO class from data, instead of by hand.
-#
-#   normal classes : the threshold with the best F1 (balance of false alarms and misses)
-#   safety classes : the threshold with the best F2 score: like F1, but a miss counts 4x more than
-#                    a false alarm (missing stairs is worse than a false warning). The earlier rule
-#                    "at least 80% recall" pushed person / vehicle / stairs to the 0.15 floor, because
-#                    YOLO26n never reaches 80% recall for them -> far too many false alarms.
-#
-# Uses the VALIDATION split, so the test split stays untouched for the final numbers.
-#
-# Run from the FYP1 folder:
-#   python scripts/tune_thresholds.py
-# Then copy the printed CLASS_CONF block into fusion_engine.py.
 
 import numpy as np
 from ultralytics import YOLO

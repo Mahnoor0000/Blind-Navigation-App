@@ -1,14 +1,4 @@
-"""
-Numbers for the paper, in one run:
-  1. overall + per-class precision, recall, mAP50, mAP50-95 on the 700-image test split
-  2. descending-stairs check: in how many stair photos the model finds stairs at conf 0.25 and 0.5
 
-Usage (Windows PowerShell, from C:\\Users\\hp\\Desktop\\FYP1):
-  python scripts/paper_eval.py --weights PATH\\TO\\best.pt --data "C:\\Users\\hp\\Desktop\\FYP1\\Dataset\\merged_subset_v3\\data.yaml" --stairs PATH\\TO\\descending_stairs_folder
-
-Run it once with the YOLO26n weights and once with the YOLOv8n weights.
-Saves paper_eval_<weights-name>.csv and prints everything.
-"""
 import argparse
 import csv
 import tempfile
