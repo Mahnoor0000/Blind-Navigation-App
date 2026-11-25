@@ -28,6 +28,7 @@ test_results_descending/
 test_images_descending/
 test_images_results/
 TEST IMAGES FOR BLIP/*
+depth_results/
 # stray images in the scripts folder
 scripts/*.jpg
 scripts/*.png
